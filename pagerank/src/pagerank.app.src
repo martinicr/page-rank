@@ -1,0 +1,12 @@
+{application, pagerank,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { pagerank_app, []}},
+  {env, []}
+ ]}.
