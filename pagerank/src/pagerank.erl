@@ -235,13 +235,27 @@ in_memory_map_task(Reduce_Proc) ->
 %% FILE-BASED STRATEGY            %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+gen_file_name(Row_Idx) ->
+  string:join([
+    "row-",
+    integer_to_list(Row_Idx),
+    ".dat"
+  ], "").
+
+get_timestamp() ->
+  {Mega, Sec, Micro} = os:timestamp(),
+  (Mega * 1000000 + Sec) * 1000 + round(Micro/1000).
+
 text_file_reducer() ->
   receive
-    {reduce, Rows} ->
-      SL = lists:sort(Rows),
+    {reduce, Rows, ParentPid} ->
+      SL = lists:sort(dict:fetch_keys(Rows)),
+      io:format("SL = ~w~n",[SL]),
       Fun = fun(Idx) ->
-        Row_idx = integer_to_list(Idx),
-        Filename = string:join(["row-",Row_idx,".dat"],""),
+
+%%         Row_idx = integer_to_list(Idx),
+%%         Filename = string:join(["row-",Row_idx,".dat"],""),
+        Filename = dict:fetch(Idx, Rows),
         {ok, Binary} = file:read_file(Filename),
         S = string:tokens(binary_to_list(Binary), "\r\n\t "),
         Fun2 = fun(X) ->
@@ -249,46 +263,70 @@ text_file_reducer() ->
         end,
         FL = lists:map(Fun2, S),
         io:format("[~w] ~w ~n", [Idx, lists:sum(FL)]),
-        file:close(S)
+        file:close(S),
+
+        Row_idx = integer_to_list(Idx),
+        Timestamp = integer_to_list(get_timestamp()),
+        NewName = string:join(["row-", Row_idx, "-", Timestamp,".log"],""),
+
+        file:rename(Filename, NewName),
+%%         file:delete(Filename),
+
+
+        lists:sum(FL)
       end,
-      lists:map(Fun, SL)
+      R = lists:map(Fun, SL),
+      ParentPid ! {result, R}
   end.
 
 text_file_collector(File_ids, ReduceProc) ->
   receive
     {save, {R, Prob}} ->
-      Row_idx = integer_to_list(R),
-      Filename = string:join(["row-",Row_idx,".dat"],""),
+%%       Row_idx = integer_to_list(R),
+%%       Filename = string:join(["row-",Row_idx,".dat"],""),
+
+      Filename = gen_file_name(R),
+
       {ok, S} = file:open(Filename, [append]),
       io:format(S, "~w~n",[Prob]),
       file:close(S),
 
-      case lists:member(R, File_ids) of
+%%       case lists:member(R, File_ids) of
+      case dict:is_key(R, File_ids) of
         true -> text_file_collector(File_ids, ReduceProc);
-        false -> text_file_collector(lists:append([R], File_ids), ReduceProc)
+%%         false -> text_file_collector(lists:append([R], File_ids), ReduceProc)
+        false -> text_file_collector(dict:append(R, Filename, File_ids), ReduceProc)
       end;
 
-    stop ->
-      io:format("stop save_to_file ~w ~n", [File_ids]),
-      ReduceProc ! {reduce, File_ids}
+    {stop, ParentPid} ->
+%%       io:format("stop save_to_file ~w ~n", [File_ids]),
+      ReduceProc ! {reduce, File_ids, ParentPid}
   end.
 
 
 file_based_exec() ->
   fun() ->
-    Reduce_Proc = spawn(pagerank, text_file_reducer, []),
-    spawn(pagerank, text_file_collector, [[], Reduce_Proc])
+%%     Reduce_Proc = spawn(pagerank, text_file_reducer, []),
+%%     spawn(pagerank, text_file_collector, [[], Reduce_Proc])
+    Reduce_Proc = spawn('tres@mf-bbcom', fun() -> text_file_reducer() end),
+    spawn('tres@mf-bbcom', fun() -> text_file_collector(dict:new(), Reduce_Proc) end)
   end.
 
 
 
-file_based_processes() ->
+file_based_processes(Nodes) ->
   fun(N, Reduce_Proc) ->
     Fun = fun(_) ->
-      spawn(pagerank,file_based_map_task, [Reduce_Proc])
+%%       spawn(pagerank,file_based_map_task, [Reduce_Proc])
+      Node = lists:nth(random:uniform(length(Nodes)), Nodes),
+      io:format("Node ~w~n",[Node]),
+      start_map_process(Node, Reduce_Proc)
     end,
     lists:map(Fun, lists:seq(1,N))
   end.
+
+start_map_process(Node, Reduce_Proc) ->
+  spawn(Node, fun() -> file_based_map_task(Reduce_Proc) end).
 
 file_based_map_task(Reduce_Proc) ->
   receive
@@ -298,45 +336,73 @@ file_based_map_task(Reduce_Proc) ->
       file_based_map_task(Reduce_Proc)
   end.
 
+text(Vector) ->
+  TxtRed = file_based_exec(),
+  Mappers = file_based_processes(['dos@mf-bbcom']),
+  tran_matrix(TxtRed, Mappers, Vector).
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Mapper
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+msg(Pid) ->
+  Pid ! {map, self(), "Hello"}.
+
+kill_mapper(Pid) ->
+  Pid ! stop.
+
+
+
+%% loop() ->
+%%   receive
+%%     {map, Pid, Msg} ->
+%%       io:format("Pid ~w, Msg ~w ~n",[Pid, Msg]);
+%%     stop ->
+%%       io:format("Stopping mapper! ~n")
+%%   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
-tran_matrix(Reduce_Func, Proc_Func) ->
-  Vector = vector(?N, ?BETA),
+tran_matrix(Reduce_Func, Proc_Func, Vector) ->
+%%   Vector = vector(?N, ?BETA),
   Proc_number = get_number_of_processes(length(?ADJ_LIST), ?K),
   M = splitMatrix(1, ?ADJ_LIST, []),
 
   Reduce = Reduce_Func(),
   Procs = Proc_Func(Proc_number, Reduce),
-
-  Dist = spawn(pagerank, dist, [self(), M, Procs, Vector]),
-
+%%   io:format("Procs = ~w~n",[Procs]),
+  Dist = spawn(pagerank, distribute, [self(), M, Procs, Vector]),
+  timer:sleep(1000),
   receive
     {_Pid, stop} ->
-      io:format("STOP! ~n")
+%%       io:format("STOP! ~n")
+      done
   end,
 
   Dist ! bye,
-  Reduce ! stop.
+  Reduce ! {stop, self()},
+  receive
+    {result, R} ->
+      R
+  end.
 
 
-dist(Parent, [], _, _) ->
+distribute(Parent, [], _, _) ->
   Parent ! {self(), stop};
 
-dist(Parent, [H|T], Procs, Vector) ->
+distribute(Parent, [H|T], Procs, Vector) ->
   self() ! {process, H},
   receive
     {process, {Col, Row, Val}} ->
       N_K = ?N div ?K,
       Proc_Num = 1 + ((Col - 1) div ?K) * N_K + (Row - 1) div ?K,
       Proc = lists:nth(Proc_Num, Procs),
-      Vj = lists:nth(Col, Vector),
+      Vj = lists:nth(Row, Vector),
       Proc ! {self(), {Col, Row, Val}, Vj},
-%%        io:format("H ~w, PN ~w - ~w ~n", [H, Proc_Num, Proc]),
-      dist(Parent, T, Procs, Vector);
+%%         io:format("H ~w, PN ~w - ~w ~n", [H, Proc_Num, Proc]),
+      distribute(Parent, T, Procs, Vector);
     bye ->
       io:format("bye ~n")
   end.
@@ -345,9 +411,6 @@ dist(Parent, [H|T], Procs, Vector) ->
 inmemory() ->
   MemRed = in_memory_exec(),
   Mappers = in_memory_processes(),
-  tran_matrix(MemRed, Mappers).
+  Vector = vector(?N, ?BETA),
+  tran_matrix(MemRed, Mappers, Vector).
 
-text() ->
-  TxtRed = file_based_exec(),
-  Mappers = file_based_processes(),
-  tran_matrix(TxtRed, Mappers).
