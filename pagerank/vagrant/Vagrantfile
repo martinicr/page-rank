@@ -28,6 +28,7 @@ config.vm.box = "ubuntu/trusty32"
     #reduce.vm.box = "apache"
     reduce.vm.hostname = "reducer-pr.com"
     reduce.vm.network "private_network", ip: "192.168.50.2"
+    reduce.vm.provision "shell", path: "bootstrap.sh"
   end
 
   config.vm.define "node1" do |node1|
