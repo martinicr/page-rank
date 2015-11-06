@@ -92,7 +92,7 @@ start_map_process(Node, Reduce_Proc, Beta) ->
 
 file_based_map_task(Reduce_Proc, Beta) ->
   receive
-    {_From, {R, _C, Val}, Beta, N, Vj} ->
+    {_From, {R, _C, Val}, N, Vj} ->
 %%       Prob = ((Beta * Val) + vector_prima(N, Beta)) * Vj,
       Prob = calc_prob(Beta, N, Vj, Val),
       Reduce_Proc ! {save, {R, Prob}},
