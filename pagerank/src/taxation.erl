@@ -35,7 +35,7 @@ text_file_reducer() ->
 
 
         Ones = gen_one_vector(length(SL) - length(FL)),
-        io:format("FL ~w, Ones ~w ~n",[FL, Ones]),
+%%         io:format("FL ~w, Ones ~w ~n",[FL, Ones]),
 
         lists:sum(lists:append(FL, Ones))
       end,
