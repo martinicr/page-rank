@@ -35,7 +35,7 @@ text_file_reducer() ->
 
 
         Ones = gen_one_vector(length(SL) - length(FL)),
-        io:format("FL ~w, Ones ~w ~n",[FL, Ones]),
+%%         io:format("FL ~w, Ones ~w ~n",[FL, Ones]),
 
         lists:sum(lists:append(FL, Ones))
       end,
@@ -81,7 +81,7 @@ file_based_processes(Nodes) ->
   fun(N, Reduce_Proc) ->
     Fun = fun(_) ->
       Node = lists:nth(random:uniform(length(Nodes)), Nodes),
-%%       io:format("Node ~w~n",[Node]),
+      io:format("Node ~w, Reduce_Proc ~w~n",[Node, Reduce_Proc]),
       start_map_process(Node, Reduce_Proc)
     end,
     lists:map(Fun, lists:seq(1,N))
