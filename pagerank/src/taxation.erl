@@ -5,7 +5,8 @@
 -compile([export_all]).
 
 
--define(ADJ_LIST, [[2,3,4],[1,4], [3], [2,3]]).
+-define(ADJ_LIST_PR, [[2,3,4],[1,4], [1], [2,3]]).
+-define(ADJ_LIST_TAX, [[2,3,4],[1,4], [3], [2,3]]).
 -define(K, 2).
 -define(N, 4).
 -define(BETA, 0.8).
@@ -69,6 +70,40 @@ file_based_exec(Node) ->
     spawn(Node, fun() -> text_file_collector(dict:new(), Reduce_Proc) end)
   end.
 
+%%-- PAGERANK
+pagerank_text_file_reducer() ->
+  receive
+    {reduce, Rows, ParentPid} ->
+      SL = lists:sort(dict:fetch_keys(Rows)),
+      Fun = fun(Idx) ->
+        Filename = dict:fetch(Idx, Rows),
+        {ok, Binary} = file:read_file(Filename),
+        S = string:tokens(binary_to_list(Binary), "\r\n\t "),
+        Fun2 = fun(X) ->
+          list_to_float(X)
+        end,
+        FL = lists:map(Fun2, S),
+        file:close(S),
+
+        Row_idx = integer_to_list(Idx),
+        Timestamp = integer_to_list(get_timestamp()),
+        NewName = string:join(["row-", Row_idx, "-", Timestamp,".log"],""),
+        file:rename(Filename, NewName),
+
+        lists:sum((FL))
+      end,
+      R = lists:map(Fun, SL),
+      ParentPid ! {result, R}
+  end.
+
+
+pagerank_file_based_exec(Node) ->
+  fun() ->
+    Reduce_Proc = spawn(Node, fun() -> pagerank_text_file_reducer() end),
+    spawn(Node, fun() -> text_file_collector(dict:new(), Reduce_Proc) end)
+  end.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% REDUCE PROCESS: END
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -97,6 +132,31 @@ file_based_map_task(Reduce_Proc, Beta) ->
       Prob = calc_prob(Beta, N, Vj, Val),
       Reduce_Proc ! {save, {R, Prob}},
       file_based_map_task(Reduce_Proc, Beta)
+  end.
+
+
+
+%%-- PAGERANK
+pagerank_file_based_processes(Nodes) ->
+  fun(N, Reduce_Proc) ->
+    Fun = fun(_) ->
+      Node = lists:nth(random:uniform(length(Nodes)), Nodes),
+      io:format("Node ~w, Reduce_Proc ~w ~n",[Node, Reduce_Proc]),
+      pagerank_start_map_process(Node, Reduce_Proc)
+    end,
+    lists:map(Fun, lists:seq(1,N))
+  end.
+
+pagerank_start_map_process(Node, Reduce_Proc) ->
+  spawn(Node, fun() -> pagerank_file_based_map_task(Reduce_Proc) end).
+
+
+pagerank_file_based_map_task(Reduce_Proc) ->
+  receive
+    {_From, {R, _C, Val}, _N, Vj} ->
+      Prob = Val * Vj,
+      Reduce_Proc ! {save, {R, Prob}},
+      pagerank_file_based_map_task(Reduce_Proc)
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -163,13 +223,13 @@ calc_prob(Beta, N, Vj, Val) ->
 
 tax() ->
   Red_Proc = file_based_exec('tres@mf-bbcom'),
-  Mappers = file_based_processes(['dos@mf-bbcom']),
-  tax([0.25,0.25,0.25,0.25], ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
+  Mappers = file_based_processes(?BETA, ['dos@mf-bbcom']),
+  tax([0.25,0.25,0.25,0.25], ?ADJ_LIST_TAX, ?N, ?K, Red_Proc, Mappers).
 
 tax(Vector) ->
   Red_Proc = file_based_exec('tres@mf-bbcom'),
-  Mappers = file_based_processes(['dos@mf-bbcom']),
-  tax(Vector, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
+  Mappers = file_based_processes(?BETA, ['dos@mf-bbcom']),
+  tax(Vector, ?ADJ_LIST_TAX, ?N, ?K, Red_Proc, Mappers).
 
 tax(Vector, Adj_List, N, K, Red_Proc, Map_Proc) ->
   Proc_number = number_of_processes(N, K),
@@ -191,6 +251,17 @@ tax(Vector, Adj_List, N, K, Red_Proc, Map_Proc) ->
     {result, R} ->
       R
   end.
+
+
+prob() ->
+  Red_Proc = pagerank_file_based_exec('tres@mf-bbcom'),
+  Mappers = pagerank_file_based_processes(['dos@mf-bbcom']),
+  tax([0.25,0.25,0.25,0.25], ?ADJ_LIST_PR, ?N, ?K, Red_Proc, Mappers).
+
+prob(Vector) ->
+  Red_Proc = pagerank_file_based_exec('tres@mf-bbcom'),
+  Mappers = pagerank_file_based_processes(['dos@mf-bbcom']),
+  tax(Vector, ?ADJ_LIST_PR, ?N, ?K, Red_Proc, Mappers).
 
 
 
