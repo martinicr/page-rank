@@ -81,7 +81,7 @@ file_based_processes(Nodes) ->
   fun(N, Reduce_Proc) ->
     Fun = fun(_) ->
       Node = lists:nth(random:uniform(length(Nodes)), Nodes),
-%%       io:format("Node ~w~n",[Node]),
+      io:format("Node ~w, Reduce_Proc ~w~n",[Node, Reduce_Proc]),
       start_map_process(Node, Reduce_Proc)
     end,
     lists:map(Fun, lists:seq(1,N))
@@ -163,11 +163,11 @@ calc_prob(Beta, N, Vj, Val) ->
 
 tax() ->
   Red_Proc = file_based_exec('reducer@reducer-pr'),
-  Mappers = file_based_processes(['dos@mf-bbcom']),
+  Mappers = file_based_processes(['dos@mf-bbcom', 'reducer@reducer-pr']),
   tax([0.25,0.25,0.25,0.25], ?BETA, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
 
 tax(Vector) ->
-  Red_Proc = file_based_exec('tres@mf-bbcom'),
+  Red_Proc = file_based_exec('reducer@reducer-pr'),
   Mappers = file_based_processes(['dos@mf-bbcom']),
   tax(Vector, ?BETA, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
 
