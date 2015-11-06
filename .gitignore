@@ -16,3 +16,4 @@ rel/example_project
 *.idea/
 
 *.log
+*.vagrant/
