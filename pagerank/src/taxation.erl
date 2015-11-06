@@ -162,7 +162,7 @@ calc_prob(Beta, N, Vj, Val) ->
 
 
 tax() ->
-  Red_Proc = file_based_exec('tres@mf-bbcom'),
+  Red_Proc = file_based_exec('reducer@reducer-pr'),
   Mappers = file_based_processes(['dos@mf-bbcom']),
   tax([0.25,0.25,0.25,0.25], ?BETA, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
 

@@ -13,6 +13,7 @@ sudo apt-get update
 sudo apt-get install -y erlang
 
 git clone https://github.com/martinicr/page-rank.git
+sudo chown -R vagrant:vagrant page-rank/
 
 
 
