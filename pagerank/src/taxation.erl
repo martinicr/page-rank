@@ -1,13 +1,5 @@
-%%%-------------------------------------------------------------------
-%%% @author martinflores
-%%% @copyright (C) 2015, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 05. Nov 2015 3:27 PM
-%%%-------------------------------------------------------------------
 -module(taxation).
--author("martinflores").
+-author("Martin Flores").
 
 %% API
 -compile([export_all]).

@@ -11,7 +11,7 @@
 
 -compile([export_all]).
 
--define(ADJ_LIST, [[2,3,4],[1,4], [1], [2,3]]).
+-define(ADJ_LIST, [[2,3,4],[1,4], [3], [2,3]]).
 -define(K, 2).
 -define(N, 4).
 -define(BETA, 0).
@@ -29,30 +29,29 @@ splitRow(_,_,[],Result) -> Result;
 splitRow(Col,Val,[Row|Rest],Result) -> splitRow(Col,Val,Rest,[{Row,Col,Val}|Result]).
 
 
-princ() ->
-  Vector = vector(?N, ?BETA),
-  Proc_number = get_number_of_processes(length(?ADJ_LIST), ?K),
-
-  REDUCE = spawn(pagerank, reduce_proc, [self()]),
-  LOOP = spawn(pagerank, my_loop, [self(), dict:new(), REDUCE]),
-
-  ReduceFileProc = spawn(pagerank, reduce_row_files,[]),
-  SaveFileProc = spawn(pagerank, save_to_file, [[], ReduceFileProc]),
-
-  Procs = create_processes_2(LOOP, Proc_number, SaveFileProc),
-
-%%   io:format("Procs ~w~n",[Procs]),
-  M = splitMatrix(1, ?ADJ_LIST, []),
-  PP = spawn(pagerank, second, [self(), M, Procs, Vector]),
-
-  receive
-    {_Pid, stop} ->
-      io:format("STOP! ~n")
-  end,
-
-  PP ! bye,
-  LOOP ! stop,
-  SaveFileProc ! stop.
+%% princ() ->
+%%   Vector = vector(?N, ?BETA),
+%%   Proc_number = get_number_of_processes(length(?ADJ_LIST), ?K),
+%%
+%%   REDUCE = spawn(pagerank, reduce_proc, [self()]),
+%%   LOOP = spawn(pagerank, my_loop, [self(), dict:new(), REDUCE]),
+%%
+%%   ReduceFileProc = spawn(pagerank, reduce_row_files,[]),
+%%   SaveFileProc = spawn(pagerank, save_to_file, [[], ReduceFileProc]),
+%%
+%%   Procs = create_processes_2(LOOP, Proc_number, SaveFileProc),
+%%
+%%   M = splitMatrix(1, ?ADJ_LIST, []),
+%%   PP = spawn(pagerank, second, [self(), M, Procs, Vector]),
+%%
+%%   receive
+%%     {_Pid, stop} ->
+%%       io:format("STOP! ~n")
+%%   end,
+%%
+%%   PP ! bye,
+%%   LOOP ! stop,
+%%   SaveFileProc ! stop.
 
 %%   receive
 %%     {result, Dict} ->
@@ -157,11 +156,11 @@ my_loop(ParentId, Dict, ReduceProc) ->
   end.
 
 
-vector(N, Beta) ->
-  Fun = fun(_) ->
-    (1 - Beta) / N
-  end,
-  lists:map(Fun, lists:seq(1, N)).
+%% vector(N, Beta) ->
+%%   Fun = fun(_) ->
+%%     (1 - Beta) / N
+%%   end,
+%%   lists:map(Fun, lists:seq(1, N)).
 
 
 reduce_proc(From) ->
@@ -250,7 +249,7 @@ text_file_reducer() ->
   receive
     {reduce, Rows, ParentPid} ->
       SL = lists:sort(dict:fetch_keys(Rows)),
-      io:format("SL = ~w~n",[SL]),
+%%       io:format("SL = ~w~n",[SL]),
       Fun = fun(Idx) ->
 
 %%         Row_idx = integer_to_list(Idx),
@@ -262,18 +261,19 @@ text_file_reducer() ->
           list_to_float(X)
         end,
         FL = lists:map(Fun2, S),
-        io:format("[~w] ~w ~n", [Idx, lists:sum(FL)]),
+%%         io:format("[~w] ~w ~n", [Idx, lists:sum(FL)]),
         file:close(S),
 
         Row_idx = integer_to_list(Idx),
         Timestamp = integer_to_list(get_timestamp()),
         NewName = string:join(["row-", Row_idx, "-", Timestamp,".log"],""),
-
         file:rename(Filename, NewName),
-%%         file:delete(Filename),
 
 
-        lists:sum(FL)
+        Ones = gen_one_vector(length(SL) - length(FL)),
+        io:format("FL ~w, Ones ~w ~n",[FL, Ones]),
+
+        lists:sum(lists:append(FL, Ones))
       end,
       R = lists:map(Fun, SL),
       ParentPid ! {result, R}
@@ -314,55 +314,56 @@ file_based_exec() ->
 
 
 
-file_based_processes(Nodes) ->
+file_based_processes(Beta, Nodes) ->
   fun(N, Reduce_Proc) ->
     Fun = fun(_) ->
 %%       spawn(pagerank,file_based_map_task, [Reduce_Proc])
       Node = lists:nth(random:uniform(length(Nodes)), Nodes),
       io:format("Node ~w~n",[Node]),
-      start_map_process(Node, Reduce_Proc)
+      start_map_process(Node, Reduce_Proc, Beta)
     end,
     lists:map(Fun, lists:seq(1,N))
   end.
 
-start_map_process(Node, Reduce_Proc) ->
-  spawn(Node, fun() -> file_based_map_task(Reduce_Proc) end).
+start_map_process(Node, Reduce_Proc, Beta) ->
+  spawn(Node, fun() -> file_based_map_task(Reduce_Proc, Beta) end).
 
-file_based_map_task(Reduce_Proc) ->
+file_based_map_task(Reduce_Proc, Beta) ->
+
   receive
     {_From, {R, C, Val}, Vj} ->
-      Prob = Val * Vj,
+      Prob = ((Beta * Val) + vector_prima(4, Beta)) * Vj,
       Reduce_Proc ! {save, {R, Prob}},
-      file_based_map_task(Reduce_Proc)
+      file_based_map_task(Reduce_Proc, Beta)
   end.
 
-text(Vector) ->
+text(Beta) ->
+  Vector = vector(?N),
   TxtRed = file_based_exec(),
-  Mappers = file_based_processes(['dos@mf-bbcom']),
+  Mappers = file_based_processes(Beta, ['dos@mf-bbcom']),
   tran_matrix(TxtRed, Mappers, Vector).
+
+
+gen_one_vector(N) ->
+  Fun = fun(_) ->
+    1 * vector_prima(4, 0.8) * (1/4)
+  end,
+  lists:map(Fun, lists:seq(1,N)).
+
+vector(N) ->
+
+  Fun = fun(_) ->
+    1 / N
+  end,
+  lists:map(Fun, lists:seq(1, N)).
+
+vector_prima(N, Beta) ->
+  (1 - Beta) / N.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Mapper
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-msg(Pid) ->
-  Pid ! {map, self(), "Hello"}.
-
-kill_mapper(Pid) ->
-  Pid ! stop.
-
-
-
-%% loop() ->
-%%   receive
-%%     {map, Pid, Msg} ->
-%%       io:format("Pid ~w, Msg ~w ~n",[Pid, Msg]);
-%%     stop ->
-%%       io:format("Stopping mapper! ~n")
-%%   end.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 tran_matrix(Reduce_Func, Proc_Func, Vector) ->
@@ -411,6 +412,9 @@ distribute(Parent, [H|T], Procs, Vector) ->
 inmemory() ->
   MemRed = in_memory_exec(),
   Mappers = in_memory_processes(),
-  Vector = vector(?N, ?BETA),
+  Vector = vector(?N),
   tran_matrix(MemRed, Mappers, Vector).
+
+
+
 
