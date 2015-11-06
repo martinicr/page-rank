@@ -77,26 +77,26 @@ file_based_exec(Node) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% MAPPER PROCESSES: BEGIN
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-file_based_processes(Nodes) ->
+file_based_processes(Beta, Nodes) ->
   fun(N, Reduce_Proc) ->
     Fun = fun(_) ->
       Node = lists:nth(random:uniform(length(Nodes)), Nodes),
-      io:format("Node ~w, Reduce_Proc ~w~n",[Node, Reduce_Proc]),
-      start_map_process(Node, Reduce_Proc)
+      io:format("Node ~w, Reduce_Proc ~w, Beta ~w ~n",[Node, Reduce_Proc, Beta]),
+      start_map_process(Node, Reduce_Proc, Beta)
     end,
     lists:map(Fun, lists:seq(1,N))
   end.
 
-start_map_process(Node, Reduce_Proc) ->
-  spawn(Node, fun() -> file_based_map_task(Reduce_Proc) end).
+start_map_process(Node, Reduce_Proc, Beta) ->
+  spawn(Node, fun() -> file_based_map_task(Reduce_Proc, Beta) end).
 
-file_based_map_task(Reduce_Proc) ->
+file_based_map_task(Reduce_Proc, Beta) ->
   receive
-    {_From, {R, _C, Val}, Beta, N, Vj} ->
+    {_From, {R, _C, Val}, N, Vj} ->
 %%       Prob = ((Beta * Val) + vector_prima(N, Beta)) * Vj,
       Prob = calc_prob(Beta, N, Vj, Val),
       Reduce_Proc ! {save, {R, Prob}},
-      file_based_map_task(Reduce_Proc)
+      file_based_map_task(Reduce_Proc, Beta)
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -164,21 +164,21 @@ calc_prob(Beta, N, Vj, Val) ->
 tax() ->
   Red_Proc = file_based_exec('tres@mf-bbcom'),
   Mappers = file_based_processes(['dos@mf-bbcom']),
-  tax([0.25,0.25,0.25,0.25], ?BETA, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
+  tax([0.25,0.25,0.25,0.25], ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
 
 tax(Vector) ->
   Red_Proc = file_based_exec('tres@mf-bbcom'),
   Mappers = file_based_processes(['dos@mf-bbcom']),
-  tax(Vector, ?BETA, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
+  tax(Vector, ?ADJ_LIST, ?N, ?K, Red_Proc, Mappers).
 
-tax(Vector, Beta, Adj_List, N, K, Red_Proc, Map_Proc) ->
+tax(Vector, Adj_List, N, K, Red_Proc, Map_Proc) ->
   Proc_number = number_of_processes(N, K),
   TM = split_matrix(1, Adj_List, []),
 
   Reduce = Red_Proc(),
   Processes = Map_Proc(Proc_number, Reduce),
 
-  Distribute = spawn(taxation, distribute, [self(), TM, Processes, Vector, Beta, N, K]),
+  Distribute = spawn(taxation, distribute, [self(), TM, Processes, Vector, N, K]),
   timer:sleep(1000),
   receive
     {_Pid, stop} ->
@@ -194,19 +194,19 @@ tax(Vector, Beta, Adj_List, N, K, Red_Proc, Map_Proc) ->
 
 
 
-distribute(Parent, [], _, _, _, _, _) ->
+distribute(Parent, [], _, _, _, _) ->
   Parent ! {self(), stop};
 
-distribute(Parent, [H|T], Procs, Vector, Beta, N, K) ->
+distribute(Parent, [H|T], Procs, Vector, N, K) ->
   self() ! {process, H},
   receive
     {process, {Col, Row, Val}} ->
       Proc_Num = get_process_number(N, K, Col, Row),
       Proc = lists:nth(Proc_Num, Procs),
       Vj = lists:nth(Row, Vector),
-      Proc ! {self(), {Col, Row, Val}, Beta, N, Vj},
+      Proc ! {self(), {Col, Row, Val}, N, Vj},
 %%         io:format("H ~w, PN ~w - ~w ~n", [H, Proc_Num, Proc]),
-      distribute(Parent, T, Procs, Vector, Beta, N, K);
+      distribute(Parent, T, Procs, Vector, N, K);
     bye ->
       io:format("bye ~n")
   end.
