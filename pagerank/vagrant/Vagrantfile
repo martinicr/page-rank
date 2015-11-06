@@ -24,22 +24,28 @@ config.vm.box = "ubuntu/trusty32"
 #config.vm.network "forwarded_port", guest: 8080, host: 9090
 #config.vm.network "forwarded_port", guest: 8081, host: 9091
 
-  config.vm.define "reduce", primary: true do |reduce|
+    config.vm.define "main", primary: true do |main|
+      main.vm.hostname = "main-pr.com"
+      main.vm.network "private_network", ip: "192.168.50.2"
+      main.vm.provision "shell", path: "bootstrap.sh"
+    end
+
+  config.vm.define "reduce" do |reduce|
     #reduce.vm.box = "apache"
     reduce.vm.hostname = "reducer-pr.com"
-    reduce.vm.network "private_network", ip: "192.168.50.2"
+    reduce.vm.network "private_network", ip: "192.168.50.3"
     reduce.vm.provision "shell", path: "bootstrap.sh"
   end
 
   config.vm.define "node1" do |node1|
     node1.vm.hostname = "node1-pr.com"
-    node1.vm.network "private_network", ip: "192.168.50.3"
+    node1.vm.network "private_network", ip: "192.168.50.4"
     node1.vm.provision "shell", path: "bootstrap.sh"
   end
 
   config.vm.define "node2" do |node2|
     node2.vm.hostname = "node2-pr.com"
-    node2.vm.network "private_network", ip: "192.168.50.4"
+    node2.vm.network "private_network", ip: "192.168.50.5"
     node2.vm.provision "shell", path: "bootstrap.sh"
   end
 
